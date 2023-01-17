@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<!-- saved from url=(0061)https://s0.2mdn.net/sadbundle/18422477571235426184/index.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+	
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="ad.size" content="width=728, height=90">
+	<title></title>
+
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			border: 0;
+		}
+
+		#ad {
+			position: relative;
+			overflow: hidden;
+			cursor: pointer;
+
+			-moz-user-select: none;
+			-ms-user-select: none;
+			-webkit-user-select: none;
+			user-select: none;
+		}
+
+		#gl_canvas {
+			position: absolute;
+		}
+
+		.border {
+			-moz-box-sizing: border-box;
+			-webkit-box-sizing: border-box;
+			box-sizing: border-box;
+
+			position: absolute;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			left: 0;
+			border: 1px solid black;
+		}
+	</style>
+
+	<script>
+		const FRAME_INTERVAL = 1 / 60;
+
+		const A_ID = "id";
+		const A_PATH = "path"
+		const A_SIZE = "size";
+		const A_POSITION = "position";
+		const A_ROTATION = "rotation";
+		const A_SCALE = "scale";
+		const A_COLOR = "color";
+		const A_UV_OFFSET = "uv_offset";
+		const A_UV_SCALE = "uv_scale";
+		const A_SHEAR = "shear";
+		const A_SHADER = "shader";
+		const A_TEXTURES = "textures";
+		const A_PROPERTIES = "properties";
+		const A_DURATION = "duration";
+		const A_CURVE = "curve";
+		const A_WAIT = "wait";
+		const A_STEPS = "steps";
+
+		const S_ACTOR = 0;
+		const S_MATERIAL = 1;
+
+		const T_POSITION = 0;
+		const T_ROTATION = 1;
+		const T_SCALE = 2;
+		const T_COLOR = 3;
+		const T_UV_OFFSET = 4;
+		const T_UV_SCALE = 5;
+		const T_SHEAR = 6;
+		const T_MATERIAL_PROPERTY = 7;
+
+		const T_STATUS_WAIT = 0;
+		const T_STATUS_RUN = 1;
+		const T_STATUS_DONE = 2;
+
+		const C_LINEAR = 0;
+		const C_EASE = 1;
+		const C_EASE_IN = 2;
+		const C_EASE_OUT = 3;
+
+		const PI = 3.14159;
+		const PI_OVER_TWO = PI / 2;
+		const DEGREES_TO_RADIANS = PI / 180;
+
+		function banner(scene) {
+			var width = 0;
+			var height = 0;
+
+			const metas = document.getElementsByTagName("meta");
+			for (var i = 0; i < metas.length; i++) {
+				const meta = metas[i];
+
+				if (meta.getAttribute("name") == "ad.size") {
+					const content = meta.getAttribute("content").split(' ').join('');
+					const attributes = content.split(',');
+
+					attributes.forEach(function(attribute) {
+						const elements = attribute.split('=');
+						const value = parseInt(elements[1]);
+
+						switch (elements[0]) {
+							case "width":
+								width = value;
+								break;
+							case "height":
+								height = value;
+								break;
+						}
+					});
+
+					break;
+				}
+			}
+
+			const ad = document.getElementById("ad");
+			ad.style.width = width + "px";
+			ad.style.height = height + "px";
+
+			const canvas = document.getElementById("gl_canvas");
+			canvas.width = width;
+			canvas.height = height;
+
+			const gl = canvas.getContext("webgl", { alpha: false }) || canvas.getContext("experimental-webgl", { alpha: false });
+			if (gl === null) {
+				canvas.remove();
+				return;
+			}
+
+			gl.enable(gl.BLEND);
+			gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+			const projectionMatrix = getProjectionMatrix(width, height, 100, -100);
+
+			const shaders = { };
+			const textures = { };
+			const materials = { };
+			const actors = { };
+			const sequences = [ ];
+			const wiggles = [ ];
+
+			const bannerColor = scene.color;
+			gl.clearColor(bannerColor[0], bannerColor[1], bannerColor[2], bannerColor[3]);
+
+			loadTextures(scene.textures, gl, textures, function() {
+				loadShaders(scene.shaders, gl, shaders);
+				loadMaterials(scene.materials, gl, shaders, textures, materials);
+				loadActors(scene.actors, gl, materials, actors);
+				loadSequences(scene.sequences, materials, actors, sequences);
+				loadWiggles(scene.wiggles, actors, wiggles);
+				start();
+			});
+
+			function start() {
+				var startTime;
+				var lastFrameTime;
+
+				function frame(timestamp) {
+					var time = timestamp / 1000;
+
+					if (startTime === undefined) {
+						startTime = time;
+						lastFrameTime = time;
+					}
+
+					var deltaTime = time - lastFrameTime;
+
+					if (deltaTime >= FRAME_INTERVAL) {
+						// truncate time accumulated during inactivity
+						if (deltaTime > 1) {
+							deltaTime = FRAME_INTERVAL;
+						}
+
+						updateSequences(sequences, deltaTime);
+						updateWiggles(wiggles, time);
+						draw(gl, actors, projectionMatrix);
+
+						lastFrameTime = time;
+					}
+					
+					requestAnimationFrame(frame);
+				}
+
+				requestAnimationFrame(frame);
+			}
+		}
+
+		function updateSequences(sequences, deltaTime) {
+			sequences.forEach(function(sequence) {
+				sequence.time += deltaTime;
+
+				sequence.transitions.forEach(function(transition) {
+					const object = transition.object;
+				
+					if (transition.status == T_STATUS_WAIT) {
+						if (sequence.time >= transition.wait) {
+							if (transition.duration > 0) {
+								switch (transition.property) {
+									case T_POSITION:
+										copyVector(object.position, transition.start);
+										break;
+									case T_ROTATION:
+										copyVector(object.rotation, transition.start);
+										break;
+									case T_SCALE:
+										copyVector(object.scale, transition.start);
+										break;
+									case T_COLOR:
+										copyVector(object.color, transition.start);
+										break;
+									case T_UV_OFFSET:
+										copyVector(object.uvOffset, transition.start);
+										break;
+									case T_UV_SCALE:
+										copyVector(object.uvScale, transition.start);
+										break;
+									case T_SHEAR:
+										copyVector(object.shear, transition.start);
+										break;
+									case T_MATERIAL_PROPERTY:
+										transition.start = [object.properties["uReveal"]];
+										break;
+								}
+								
+								transition.status = T_STATUS_RUN;
+							} else {
+								switch (transition.property) {
+									case T_POSITION:
+										copyVector(transition.end, object.position);
+										break;
+									case T_ROTATION:
+										copyVector(transition.end, object.rotation);
+										break;
+									case T_SCALE:
+										copyVector(transition.end, object.scale);
+										break;
+									case T_COLOR:
+										copyVector(transition.end, object.color);
+										break;
+									case T_UV_OFFSET:
+										copyVector(transition.end, object.uvOffset);
+										break;
+									case T_UV_SCALE:
+										copyVector(transition.end, object.uvScale);
+										break;
+									case T_SHEAR:
+										copyVector(transition.end, object.shear);
+										break;
+									case T_MATERIAL_PROPERTY:
+										object.properties["uReveal"] = transition.end[0];
+										break;
+								}
+		
+								transition.status = T_STATUS_DONE;
+							}
+						}
+					} else if (transition.status == T_STATUS_RUN) {
+						transition.progress += deltaTime;
+
+						if (transition.progress < transition.duration) {
+							var t = transition.progress / transition.duration;
+							if (transition.steps > 0) {
+								t = Math.floor(t * transition.steps) / transition.steps;
+							}
+
+							switch (transition.curve) {
+								case C_EASE:
+									t = -(Math.cos(PI * t) - 1) / 2;
+									break;
+								case C_EASE_IN:
+									t = 1 - Math.cos(t * PI_OVER_TWO);
+									break;
+								case C_EASE_OUT:
+									t = Math.sin(t * PI_OVER_TWO);
+									break;
+							}
+
+							for (var i = 0; i < transition.value.length; i++) {
+								transition.value[i] = transition.start[i] + ((transition.end[i] - transition.start[i]) * t);
+							}
+						} else {
+							transition.progress = transition.duration;
+							copyVector(transition.end, transition.value);
+							transition.status = T_STATUS_DONE;
+						}
+
+						switch (transition.property) {
+							case T_POSITION:
+								copyVector(transition.value, object.position);
+								break;
+							case T_ROTATION:
+								copyVector(transition.value, object.rotation);
+								break;
+							case T_SCALE:
+								copyVector(transition.value, object.scale);
+								break;
+							case T_COLOR:
+								copyVector(transition.value, object.color);
+								break;
+							case T_UV_OFFSET:
+								copyVector(transition.value, object.uvOffset);
+								break;
+							case T_UV_SCALE:
+								copyVector(transition.value, object.uvScale);
+								break;
+							case T_SHEAR:
+								copyVector(transition.value, object.shear);
+								break;
+							case T_MATERIAL_PROPERTY:
+								object.properties["uReveal"] = transition.value[0];
+								break;
+						}
+					}
+				});
+
+				if ((sequence.wait >= 0) && (sequence.time >= sequence.wait)) {
+					sequence.time = 0;
+
+					sequence.transitions.forEach(function(transition) {
+						transition.progress = 0;
+						transition.status = T_STATUS_WAIT;
+					});
+				}
+			});
+		}
+
+		function updateWiggles(wiggles, time) {
+			wiggles.forEach(function(wiggle, index) {
+				const wiggleTime = (time + index) * wiggle.speed;
+				wiggle.actor.shear[0] = wiggle.baseValue[0] + (Math.sin(wiggleTime) * Math.cos(wiggleTime * 0.25) * wiggle.size);
+			});
+		}
+
+		function draw(gl, actors, projectionMatrix) {
+			gl.clear(gl.COLOR_BUFFER_BIT);
+
+			for (var actorKey in actors) {
+				const actor = actors[actorKey];
+
+				const matrix = getMatrix(actor.position, actor.rotation, actor.scale);
+				const material = actor.material;
+				const mesh = actor.mesh;
+
+				gl.useProgram(material.program);
+
+				gl.uniformMatrix4fv(material.uniformLocations["uMatrix"], false, matrix);
+				gl.uniformMatrix4fv(material.uniformLocations["uProjectionMatrix"], false, projectionMatrix);
+				gl.uniform4fv(material.uniformLocations["uColor"], actor.color);
+				gl.uniform4fv(material.uniformLocations["uUVTransform"], [actor.uvOffset[0], actor.uvOffset[1], actor.uvScale[0], actor.uvScale[1]]);
+				gl.uniform1f(material.uniformLocations["uShear"], actor.shear[0]);
+
+				for (var propertyKey in material.properties) {
+					gl.uniform1f(material.uniformLocations[propertyKey], material.properties[propertyKey]);
+				}
+
+				// material buffers
+				gl.bindBuffer(gl.ARRAY_BUFFER, mesh.positionBuffer);
+				gl.vertexAttribPointer(material.attribLocations["aVertexPosition"], 2, gl.FLOAT, false, 0, 0);
+				gl.enableVertexAttribArray(material.attribLocations["aVertexPosition"]);
+
+				gl.bindBuffer(gl.ARRAY_BUFFER, mesh.uvBuffer);
+				gl.vertexAttribPointer(material.attribLocations["aUV"], 2, gl.FLOAT, false, 0, 0);
+				gl.enableVertexAttribArray(material.attribLocations["aUV"]);
+
+				var textureNames = Object.keys(material.textures);
+				textureNames.forEach(function(textureName, index) {
+					gl.activeTexture(gl.TEXTURE0 + index);
+					gl.bindTexture(gl.TEXTURE_2D, material.textures[textureName].texture);
+					gl.uniform1i(material.uniformLocations[textureName], index);
+				});
+
+				gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+			};
+		}
+
+		function getProjectionMatrix(width, height, near, far) {
+			const halfWidth = width / 2;
+			const halfHeight = height / 2;
+
+			const l = -halfWidth;
+			const r = halfWidth;
+			const t = halfHeight;
+			const b = -halfHeight;
+
+			return [
+				2 / (r - l), 0, 0, 0,
+				0, 2 / (t - b), 0, 0,
+				0, 0, 2 / (near - far), 0,
+				(l + r) / (l - r), (b + t) / (b - t), (near + far) / (near - far), 1
+			];
+		}
+
+		function loadTextures(texturePaths, gl, result, callback) {
+			for (var id in texturePaths) {
+				loadTexture(id, texturePaths[id]);
+			}
+
+			function loadTexture(id, path) {
+				result[id] = null;
+			
+				const image = new Image();
+				image.onload = function() {
+					const texture = gl.createTexture();
+			
+					gl.bindTexture(gl.TEXTURE_2D, texture);
+					gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+			
+					if (!isPowerOfTwo(image.width) || !isPowerOfTwo(image.height)) {
+						gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+						gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+					} else {
+						gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+						gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+					}
+			
+					gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+			
+					result[id] = {
+						texture: texture,
+						width: image.width,
+						height: image.height
+					};
+			
+					// check if all other textures have finished loading
+					for (var loadedId in result) {
+						if (result[loadedId] == null) {
+							return;
+						}
+					}
+
+					callback();
+
+					function isPowerOfTwo(value) {
+						return (value & (value - 1)) == 0;
+					}
+				};
+				image.crossOrigin = "anonymous";
+				image.src = path;
+			}
+		}
+
+		function loadShaders(shaderInfos, gl, shaders) {
+			shaderInfos.forEach(function(shaderId) {
+				shaders[shaderId] = {
+					vert: createShader(gl.VERTEX_SHADER, document.getElementById(shaderId + "_vert").textContent),
+					frag: createShader(gl.FRAGMENT_SHADER, document.getElementById(shaderId + "_frag").textContent)
+				};
+			});
+
+			function createShader(type, source) {
+				const shader = gl.createShader(type);
+
+				gl.shaderSource(shader, source);
+				gl.compileShader(shader);
+
+				if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+					console.log(gl.getShaderInfoLog(shader));
+					gl.deleteShader(shader);
+					return null;
+				}
+
+				return shader;
+			}
+		}
+
+		function loadMaterials(materialInfos, gl, shaders, textures, result) {
+			for (var id in materialInfos) {
+				const materialInfo = materialInfos[id];
+
+				const shader = shaders[materialInfo.shader];
+			
+				const program = gl.createProgram();
+				gl.attachShader(program, shader.vert);
+				gl.attachShader(program, shader.frag);
+				gl.linkProgram(program);
+
+				if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+					return;
+				}
+
+				const attribLocations = { };
+				attribLocations["aVertexPosition"] = gl.getAttribLocation(program, "aVertexPosition");
+				attribLocations["aUV"] = gl.getAttribLocation(program, "aUV");
+
+				const uniformLocations = { };
+				uniformLocations["uMatrix"] = gl.getUniformLocation(program, "uMatrix");
+				uniformLocations["uProjectionMatrix"] = gl.getUniformLocation(program, "uProjectionMatrix");
+				uniformLocations["uColor"] = gl.getUniformLocation(program, "uColor");
+				uniformLocations["uUVTransform"] = gl.getUniformLocation(program, "uUVTransform");
+				uniformLocations["uShear"] = gl.getUniformLocation(program, "uShear");
+
+				const materialTextures = { };
+				const textureInfos = materialInfo.textures;
+
+				for (var uniform in textureInfos) {
+					materialTextures[uniform] = textures[textureInfos[uniform]];
+					uniformLocations[uniform] = gl.getUniformLocation(program, uniform);
+				}
+
+				const properties = { };
+				if (A_PROPERTIES in materialInfo) {
+					const propertyIds = materialInfo.properties;
+
+					propertyIds.forEach(function(propertyId) {
+						uniformLocations[propertyId] = gl.getUniformLocation(program, propertyId);
+						properties[propertyId] = 0;
+					});
+				}
+
+				result[id] = {
+					program: program,
+					attribLocations: attribLocations,
+					uniformLocations: uniformLocations,
+					textures: materialTextures,
+					properties: properties
+				};
+			}
+		}
+
+		function loadActors(actorInfos, gl, materials, result) {
+			for (var id in actorInfos) {
+				const actorInfo = actorInfos[id];
+
+				const material = materials[actorInfo.material];
+				const texture = material.textures["uMainTexture"];
+
+				const size = (A_SIZE in actorInfo) ? actorInfo.size : [texture.width, texture.height];
+				const r = size[0] / 2;
+				const t = size[1] / 2;
+
+				const positionBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ -r, t, r, t, -r, -t, r, -t ]), gl.STATIC_DRAW);
+
+				const uvBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ 0, 0, 1, 0, 0, 1, 1, 1 ]), gl.STATIC_DRAW);
+
+				result[id] = {
+					position: (A_POSITION in actorInfo) ? actorInfo.position : [ 0, 0 ],
+					rotation: (A_ROTATION in actorInfo) ? actorInfo.rotation : [ 0 ],
+					scale: (A_SCALE in actorInfo) ? actorInfo.scale : [ 1, 1 ],
+					mesh: {
+						positionBuffer: positionBuffer,
+						uvBuffer: uvBuffer
+					},
+					material: material,
+					color: (A_COLOR in actorInfo) ? actorInfo.color : [ 1, 1, 1, 1 ],
+					uvOffset: (A_UV_OFFSET in actorInfo) ? actorInfo.uv_offset : [ 0, 0 ],
+					uvScale: (A_UV_SCALE in actorInfo) ? actorInfo.uv_scale : [ 1, 1 ],
+					shear: (A_SHEAR in actorInfo) ? [ actorInfo.shear ] : [ 0 ]
+				}
+			}
+		}
+
+		function loadSequences(sequenceInfos, materials, actors, result) {
+			sequenceInfos.forEach(function(sequenceInfo) {
+				const transitionInfos = sequenceInfo.transitions;
+
+				const transitions = [];
+
+				transitionInfos.forEach(function(transitionInfo) {
+					const duration = (A_DURATION in transitionInfo) ? transitionInfo.duration : 0;
+					const curve = (A_CURVE in transitionInfo) ? transitionInfo.curve : C_LINEAR;
+					const wait = (A_WAIT in transitionInfo) ? transitionInfo.wait : 0;
+					const steps = (A_STEPS in transitionInfo) ? transitionInfo.steps : 0;
+
+					var objects;
+
+					switch (transitionInfo.type) {
+						case S_ACTOR:
+							objects = findObjectsById(actors, transitionInfo.id);
+							break;
+						case S_MATERIAL:
+							objects = findObjectsById(materials, transitionInfo.id);
+							break;
+					}
+
+					objects.forEach(function(object) {
+						transitions.push({
+							type: transitionInfo.type,
+							object: object,
+							property: transitionInfo.property,
+							start: createVector(transitionInfo.end.length),
+							end: transitionInfo.end,
+							duration: duration,
+							curve: curve,
+							wait: wait,
+							steps: steps,
+							progress: 0,
+							value: createVector(transitionInfo.end.length),
+							status: T_STATUS_WAIT
+						});
+					});
+				});
+
+				result.push({
+					transitions: transitions,
+					wait: (A_WAIT in sequenceInfo) ? sequenceInfo.wait : -1,
+					time: 0
+				})
+			});
+
+			function findObjectsById(objects, wildcardId) {
+				const result = []
+
+				a:
+				for (var id in objects) {
+					if (id.length != wildcardId.length) {
+						continue;
+					}
+
+					for (var i = 0; i < id.length; i++) {
+						if ((id[i] != wildcardId[i]) && (wildcardId[i] != '?')) {
+							continue a;
+						}
+					}
+
+					result.push(objects[id]);
+				}
+
+				return result;
+			}
+		}
+
+		function loadWiggles(wiggleInfos, actors, result) {
+			wiggleInfos.forEach(function(wiggleInfo) {
+				const actor = actors[wiggleInfo.actor];
+				const baseValue = createVector(actor.shear.length);
+				copyVector(actor.shear, baseValue);
+
+				result.push({
+					actor: actor,
+					property: wiggleInfo.property,
+					baseValue: baseValue,
+					size: wiggleInfo.size,
+					speed: wiggleInfo.speed
+				});
+			});
+		}
+
+		function getMatrix(position, rotation, scale) {
+			const t = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, position[0], position[1], 0, 1 ];
+
+			const angle = rotation[0] * DEGREES_TO_RADIANS;
+			const ra = Math.cos(angle);
+			const rb = Math.sin(angle);
+			const r = [ ra, -rb, 0, 0, rb, ra, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+			
+			const s = [ scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+
+			return multiplyMatrix(t, multiplyMatrix(r, s));
+		}
+
+		function multiplyMatrix(left, right) {
+			const result = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ];
+
+			for ( var row = 0; row < 4; row++) {
+				for (var i = 0; i < 4; i++) {
+					const columnStart = i * 4;
+					var value = 0;
+					for (var j = 0; j < 4; j++) {
+						value += left[row + (j * 4)] * right[columnStart + j];
+					}
+					result[row + columnStart] = value;
+				}
+			}
+
+			return result;
+		}
+
+		function createVector(length) {
+			const result = new Array(length);
+			for (var i = 0; i < length; i++) {
+				result[i] = 0;
+			}
+			return result;
+		}
+
+		function copyVector(value, result) {
+			for (var i = 0; i < value.length; i++) {
+				result[i] = value[i];
+			}
+		}
+	</script>
+
+	<script id="basic_vert" type="x-shader/x-vertex">
+		attribute vec4 aVertexPosition;
+		attribute vec2 aUV;
+		
+		uniform mat4 uMatrix;
+		uniform mat4 uProjectionMatrix;
+		uniform vec4 uUVTransform;
+		uniform float uShear;
+		
+		varying highp vec2 vUV;
+		
+		void main() {
+			mediump vec4 vertexPosition = aVertexPosition;
+			vertexPosition.x += (1.0 - aUV.y) * uShear;
+			gl_Position = uProjectionMatrix * uMatrix * vertexPosition;
+			vUV = (aUV * uUVTransform.zw) + uUVTransform.xy;
+		}
+	</script>
+	<script id="basic_frag" type="x-shader/x-fragment">
+		uniform sampler2D uMainTexture;
+		uniform mediump vec4 uColor;
+		
+		varying highp vec2 vUV;
+		
+		void main() {
+			gl_FragColor = texture2D(uMainTexture, vUV) * uColor;
+		}
+	</script>
+
+	<script id="strokes_vert" type="x-shader/x-vertex">
+		attribute vec4 aVertexPosition;
+		attribute vec2 aUV;
+
+		uniform mat4 uMatrix;
+		uniform mat4 uProjectionMatrix;
+		uniform vec4 uUVTransform;
+		uniform float uShear;
+
+		varying highp vec2 vUV;
+
+		void main() {
+			mediump vec4 vertexPosition = aVertexPosition;
+			vertexPosition.x += (1.0 - aUV.y) * uShear;
+			gl_Position = uProjectionMatrix * uMatrix * vertexPosition;
+			vUV = (aUV * uUVTransform.zw) + uUVTransform.xy;
+		}
+	</script>
+	<script id="strokes_frag" type="x-shader/x-fragment">
+		uniform sampler2D uMainTexture;
+		uniform sampler2D uRevealTexture;
+		uniform mediump vec4 uColor;
+		uniform mediump float uReveal;
+		
+		varying highp vec2 vUV;
+		
+		void main() {
+			mediump vec4 color = texture2D(uMainTexture, vUV);
+			mediump float mask = texture2D(uRevealTexture, vUV).r;
+			mediump float reveal = (1.0 - uReveal) * 1.1;
+			mediump float alpha = smoothstep(reveal - 0.1, reveal, mask);
+			
+			gl_FragColor = vec4(color.rgb, color.a * alpha);
+		}
+	</script>
+
+	<script>
+		window.addEventListener("load", function() {
+			banner({
+				color: [ 0.5, 0.5, 0.5, 1 ],
+				shaders: [ "basic", "strokes" ],
+				textures: {
+					keyArt1: "KeyArt1.jpg",
+					keyArt2: "KeyArt2.jpg",
+					reveal_keyArt: "Reveal_KeyArt.jpg",
+					title: "Title.png",
+					reveal_title: "Reveal_Title.jpg",
+					cta: "CTA.png",
+					branding: "Branding.png"
+				},
+				materials: {
+					keyArt1: { shader: "basic", textures: { uMainTexture: "keyArt1" } },
+					keyArt2: { shader: "strokes", textures: { uMainTexture: "keyArt2", uRevealTexture: "reveal_keyArt" }, properties: [ "uReveal" ] },
+					title: { shader: "strokes", textures: { uMainTexture: "title", uRevealTexture: "reveal_title" }, properties: [ "uReveal" ] },
+					cta: { shader: "basic", textures: { uMainTexture: "cta" } },
+					branding: { shader: "basic", textures: { uMainTexture: "branding" } }
+				},
+				actors: {
+					keyArt1: { material: "keyArt1", scale: [ 3, 3 ] },
+					keyArt2: { material: "keyArt2", position: [ -3, 0 ], color: [ 1, 1, 1, 0 ] },
+					title: { material: "title", position: [ -224.5, 12.5 ], color: [ 1, 1, 1, 0 ] },
+					cta: { material: "cta", color: [ 1, 1, 1, 0 ] },
+					branding: { material: "branding", color: [ 1, 1, 1, 0 ] }
+				},
+				sequences: [
+					{
+						transitions: [
+							{ type: S_ACTOR, id: "keyArt1", property: T_SCALE, end: [ 1, 1 ], duration: 0.4, curve: C_EASE_OUT, wait: 0 },
+							{ type: S_MATERIAL, id: "title", property: T_MATERIAL_PROPERTY, material_property: "uReveal", end: [ 1 ], duration: 2, wait: 0 },
+							{ type: S_MATERIAL, id: "keyArt2", property: T_MATERIAL_PROPERTY, material_property: "uReveal", end: [ 1 ], duration: 10, curve: C_EASE_OUT, wait: 0.2 },
+							{ type: S_ACTOR, id: "cta", property: T_COLOR, end: [ 1, 1, 1, 1 ], duration: 1, curve: C_EASE_OUT, wait: 1.8 },
+							{ type: S_ACTOR, id: "branding", property: T_COLOR, end: [ 1, 1, 1, 1 ], duration: 1, curve: C_EASE_OUT, wait: 2.6 }
+						]
+					}
+				],
+				wiggles: []
+			});
+		});
+
+		var clickTag = "";
+	</script>
+<script type="text/javascript">
+    
+  (function() {
+    var MAX_URL_PARAM_LENGTH = 34;
+    var CLICK_X_URL_KEY = 'nx';
+    var CLICK_Y_URL_KEY = 'ny';
+    var CREATIVE_DIMENSIONS_KEY = 'dim';
+    var AD_URL_PARAM = '&adurl=';
+
+    var relegateNavigation = '';
+    var urlParamMap = {};
+
+    urlParamMap[CLICK_X_URL_KEY] = null;
+    urlParamMap[CLICK_Y_URL_KEY] = null;
+    urlParamMap[CREATIVE_DIMENSIONS_KEY] = null;
+
+    var handleClickTagMessage = function(e) {
+      try {
+        var eventData = JSON.parse(e.data);
+      } catch (err) {
+        return;
+      }
+      if (eventData.isInitClickTag) {
+        if (eventData.clickTags) {
+          for (var i = 0; i < eventData.clickTags.length; i++) {
+            var clkTag = eventData.clickTags[i];
+            window[clkTag.name] = clkTag.url;
+          }
+        } else if (eventData.clickTag) {
+          window.clickTag = eventData.clickTag;
+        }
+        relegateNavigation = eventData.relegateNavigation;
+      }
+    };
+
+    var storeClickCoordinates = function(e) {
+      urlParamMap[CLICK_X_URL_KEY] = Math.round(e.clientX);
+      urlParamMap[CLICK_Y_URL_KEY] = Math.round(e.clientY);
+    };
+
+    var getCreativeDimensions = function() {
+      return window.innerWidth + 'x' + window.innerHeight;
+    }
+
+    var getExitClickParams = function(e) {
+      urlParamMap[CREATIVE_DIMENSIONS_KEY] = getCreativeDimensions();
+
+      var exitParams = '';
+      for (var key in urlParamMap) {
+        exitParams += '&' + key + '=';
+        if (urlParamMap[key] !== null) {
+          exitParams += urlParamMap[key];
+        }
+      }
+      return exitParams;
+    }
+
+    var appendExitClickParams = function(url) {
+      var adUrlIndex = url.toLowerCase().indexOf(AD_URL_PARAM);
+      var paramsToBeAdded = getExitClickParams();
+      if (adUrlIndex > -1 && paramsToBeAdded.length <= MAX_URL_PARAM_LENGTH) {
+        url = url.substr(0, adUrlIndex) + paramsToBeAdded +
+          url.substr(adUrlIndex);
+      };
+      return url;
+    };
+
+    if (open.call) {
+      window.open = function(open) {
+        return function(url, name, features) {
+          url = appendExitClickParams(url);
+          if (relegateNavigation === 'parent') {
+            var message = {'clickTag': url, 'isPostClickTag': true};
+            parent.postMessage(JSON.stringify(message), '*');
+          } else {
+            var args = [url, name];
+            if (features) {
+              args.push(features);
+            }
+            open.apply(window, args);
+          }
+        };
+      }(window.open);
+    }
+
+    if (window.addEventListener) {
+      window.addEventListener(
+          'message', handleClickTagMessage, false);
+      window.addEventListener('mousedown', storeClickCoordinates, true);
+    } else {
+      window.attachEvent('onmessage', handleClickTagMessage);
+    }
+  })();
+    
+  </script></head>
+<body>
+	<div id="ad" onclick="window.open(window.clickTag);" style="width: 728px; height: 90px;">
+		<canvas id="gl_canvas" width="728" height="90"></canvas>
+		<div class="border"></div>
+	</div>
+
+</body></html>
