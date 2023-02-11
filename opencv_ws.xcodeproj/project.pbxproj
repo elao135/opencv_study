@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		719B45262974EAFE00672ED3 /* hough(직접).cpp in Sources */ = {isa = PBXBuildFile; fileRef = 719B450A296D3A2100672ED3 /* hough(직접).cpp */; };
+		719B45472997C74000672ED3 /* craw.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 719B45462997C74000672ED3 /* craw.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -32,8 +32,11 @@
 		719B44F029654D7800672ED3 /* realTimeBackProjection.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = realTimeBackProjection.cpp; sourceTree = "<group>"; };
 		719B4508296D1D6D00672ED3 /* Hough.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Hough.cpp; sourceTree = "<group>"; };
 		719B450A296D3A2100672ED3 /* hough(직접).cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "hough(직접).cpp"; sourceTree = "<group>"; };
-		719B450E296E742300672ED3 /* hough_reference.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = hough_reference.cpp; sourceTree = "<group>"; };
-		719B4512296E8B0F00672ED3 /* antoer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = antoer.cpp; sourceTree = "<group>"; };
+		719B45272976555800672ED3 /* hough_fitting.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = hough_fitting.cpp; sourceTree = "<group>"; };
+		719B452B29765AD900672ED3 /* houghlinep.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = houghlinep.cpp; sourceTree = "<group>"; };
+		719B4537298CC12700672ED3 /* test1.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = test1.cpp; sourceTree = "<group>"; };
+		719B453A2992914900672ED3 /* test2.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = test2.cpp; sourceTree = "<group>"; };
+		719B45462997C74000672ED3 /* craw.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = craw.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +53,7 @@
 		715766302919366C000679BA = {
 			isa = PBXGroup;
 			children = (
+				719B4536298CC11000672ED3 /* week3 */,
 				719B4515296E98EC00672ED3 /* another */,
 				719B4507296D1D5200672ED3 /* week2 */,
 				7157663B2919366C000679BA /* histogram */,
@@ -83,8 +87,8 @@
 			children = (
 				719B4508296D1D6D00672ED3 /* Hough.cpp */,
 				719B450A296D3A2100672ED3 /* hough(직접).cpp */,
-				719B450E296E742300672ED3 /* hough_reference.cpp */,
-				719B4512296E8B0F00672ED3 /* antoer.cpp */,
+				719B45272976555800672ED3 /* hough_fitting.cpp */,
+				719B452B29765AD900672ED3 /* houghlinep.cpp */,
 			);
 			path = week2;
 			sourceTree = "<group>";
@@ -94,6 +98,16 @@
 			children = (
 			);
 			path = another;
+			sourceTree = "<group>";
+		};
+		719B4536298CC11000672ED3 /* week3 */ = {
+			isa = PBXGroup;
+			children = (
+				719B4537298CC12700672ED3 /* test1.cpp */,
+				719B453A2992914900672ED3 /* test2.cpp */,
+				719B45462997C74000672ED3 /* craw.cpp */,
+			);
+			path = week3;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -153,7 +167,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				719B45262974EAFE00672ED3 /* hough(직접).cpp in Sources */,
+				719B45472997C74000672ED3 /* craw.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

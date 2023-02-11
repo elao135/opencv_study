@@ -62,7 +62,7 @@ void showNewImg()
 int main( int, char** argv )
 {
     /// Read the image
-    src = imread(ASIAN);
+    src = imread(NASA);
 
     /// Transform it to HSV
     cvtColor( src, hsv, COLOR_BGR2HSV );
